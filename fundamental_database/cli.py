@@ -4,7 +4,7 @@ import os
 import sys
 from datetime import date
 from .storage import connect
-from .sec import SecClient
+from .sec import SecClient, SecNotFound
 from .ingest import ingest_companies, ingest_facts
 from .metrics import normalize, snapshot, derived
 from .quality import audit
@@ -36,19 +36,24 @@ def main(argv=None):
         ciks = args.cik if args.cik else [x[0] for x in db.execute('SELECT cik FROM companies ORDER BY cik LIMIT ? OFFSET ?', (args.limit,args.offset))]
         ok = 0
         failed = []
+        missing = []
         for cik in ciks:
             try:
                 n = ingest_facts(db,client.facts(cik))
                 normalize(db,cik)
                 ok += 1
                 print(json.dumps({'cik':cik,'observations_processed':n}))
+            except SecNotFound as exc:
+                missing.append({'cik': cik, 'reason': str(exc)})
+                print(json.dumps(missing[-1]), file=sys.stderr)
+                continue
             except Exception as exc:
                 failed.append({'cik':cik,'error':str(exc)})
                 print(json.dumps(failed[-1]),file=sys.stderr)
                 if not args.continue_on_error:
                     raise
-        print(json.dumps({'succeeded':ok,'failed':failed}))
-        if failed: sys.exit(1)
+        print(json.dumps({'succeeded':ok,'missing':missing,'failed':failed}))
+        if failed and (not args.continue_on_error or ok == 0): sys.exit(1)
     elif args.cmd == 'normalize':
         print(json.dumps({'metrics_inserted':normalize(db)}))
     elif args.cmd == 'audit':

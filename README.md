@@ -43,3 +43,11 @@ Set repository secret `SEC_USER_AGENT` to a real identifying name and email. Run
 ## Next milestones
 
 Full market universe batching/checkpointing, durable GitHub-compatible storage, IFRS/India filings access, richer taxonomy mapping, per-company quality coverage, accounting-period normalization, price history and valuation, sector classifications, rankings, dashboard and integration tests against live sources.
+
+## Collection reliability (November 2026 update)
+
+- SEC Company Facts HTTP 404 responses are reported under `missing` and do not abort the batch.
+- Transient HTTP 429/5xx and network errors are retried with bounded backoff.
+- `--continue-on-error` continues after per-company errors; a batch with no successful requests and actual failures still exits nonzero.
+- Parquet export uses `pyarrow` directly; no pandas installation is required. Install `pip install -e '.[analytics]'` for export.
+- GitHub Actions artifacts are **temporary** (30-day retention), not a persistent historical database. Download and persist them before expiry; each run starts from a fresh checkout unless separate persistence is configured.
