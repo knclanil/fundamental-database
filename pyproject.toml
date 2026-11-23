@@ -9,6 +9,7 @@ requires-python = ">=3.10"
 dependencies = ["requests>=2.28"]
 [project.optional-dependencies]
 analytics = ["duckdb>=1.0", "pyarrow>=15"]
+dashboard = ["streamlit>=1.35"]
 dev = ["pytest>=7"]
 [project.scripts]
 fundamentals = "fundamental_database.cli:main"

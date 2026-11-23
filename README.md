@@ -51,3 +51,20 @@ Full market universe batching/checkpointing, durable GitHub-compatible storage, 
 - `--continue-on-error` continues after per-company errors; a batch with no successful requests and actual failures still exits nonzero.
 - Parquet export uses `pyarrow` directly; no pandas installation is required. Install `pip install -e '.[analytics]'` for export.
 - GitHub Actions artifacts are **temporary** (30-day retention), not a persistent historical database. Download and persist them before expiry; each run starts from a fresh checkout unless separate persistence is configured.
+
+## Extended research pipeline (November 2026)
+
+The `rank` command produces `data/rankings.json` with transparent within-reporting-date percentile scores. It uses annual flow periods only, does not impute missing metrics, and compares companies with identical fiscal period-end dates. **These are preliminary financial-strength scores, not investment recommendations or globally comparable rankings.** The score currently uses net/operating/gross margins, simple ending-equity ROE, FCF and liabilities/assets when calculable; companies require at least two metrics. Market-price-based valuation and industry-relative comparisons are not implemented.
+
+Run `python -m fundamental_database.cli rank`, or launch the optional local dashboard with `pip install -e '.[dashboard]'` and `streamlit run dashboard_app.py`.
+
+### Persistent GitHub storage
+
+The collection workflow now saves a gzip-compressed SQLite snapshot **per offset/limit batch** as an asset in the `historical-sec-data` GitHub Release. Each run restores the matching shard before updating it. These are *independent shards*, not one automatically merged global database. Download shards and merge/deduplicate them before cross-universe rankings; rankings produced by a single workflow run only cover that shard. Scheduled runs rotate through 150 shards of 100 CIKs; this rotation is a starting configuration, **not a guarantee of complete SEC coverage**. SEC listings may grow or change, and offsets can shift. Release asset size and GitHub quotas still apply. Never put private data or secrets in public release assets. A full-universe manifest and stable-CIK partitioning are recommended before production-scale backfills.
+
+### Limitations and next work
+
+* U.S. SEC Company Facts collection works where facts are available; coverage and completeness must be audited against the entire company master. Filings not represented in Company Facts are not ingested.
+* The India exchange filing collectors and IFRS/Ind AS normalization are **not implemented**; no India financial coverage is claimed.
+* Global historical market prices, FX rates, industry mappings, ownership, valuation ratios, consolidated multi-market rankings, and hosted dashboard deployment are **not implemented**.
+* This project has unit tests and a GitHub workflow, but a passing CI job alone does not verify the full history or every issuer. Download the workflow artifact and inspect `audit.json` and the underlying data.

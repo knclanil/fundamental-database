@@ -21,6 +21,10 @@ def main(argv=None):
     collect.add_argument('--continue-on-error',action='store_true')
     sub.add_parser('normalize')
     sub.add_parser('audit')
+    ranks = sub.add_parser('rank')
+    ranks.add_argument('--as-of',default=date.today().isoformat())
+    ranks.add_argument('--period-end')
+    ranks.add_argument('--out',default='data/rankings.json')
     exp = sub.add_parser('export')
     exp.add_argument('--out',default='data/parquet')
     snap = sub.add_parser('snapshot')
@@ -58,6 +62,14 @@ def main(argv=None):
         print(json.dumps({'metrics_inserted':normalize(db)}))
     elif args.cmd == 'audit':
         print(json.dumps(audit(db),indent=2))
+    elif args.cmd == 'rank':
+        from pathlib import Path
+        from .rankings import rank_companies
+        rows = rank_companies(db, args.as_of, args.period_end)
+        target = Path(args.out)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(rows, indent=2))
+        print(json.dumps({'ranked_companies':len(rows),'output':str(target)}))
     elif args.cmd == 'export':
         from .export import export_parquet
         print(json.dumps({'files':[str(x) for x in export_parquet(db,args.out)]}))
