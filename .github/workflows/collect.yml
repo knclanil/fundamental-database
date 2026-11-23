@@ -8,8 +8,6 @@ on:
       limit:
         description: 'Maximum companies in this batch (up to 100)'
         default: '100'
-  schedule:
-    - cron: '23 4 * * *'
 permissions:
   contents: write
 concurrency:

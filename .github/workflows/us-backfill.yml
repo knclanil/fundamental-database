@@ -1,0 +1,98 @@
+name: US Full-Universe Backfill
+on:
+  workflow_dispatch:
+    inputs:
+      sweep_day:
+        description: 'Sweep segment 0-9 (each segment processes 800 company slots)'
+        required: true
+        default: '0'
+  schedule:
+    - cron: '11 3 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: us-backfill
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      segment: ${{ steps.segment.outputs.segment }}
+    steps:
+      - id: segment
+        env:
+          INPUT_SEGMENT: ${{ inputs.sweep_day }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os,datetime
+          value = os.environ['INPUT_SEGMENT'] if os.environ['EVENT_NAME']=='workflow_dispatch' else str((datetime.datetime.now(datetime.timezone.utc).date()-datetime.date(2026,1,1)).days%10)
+          segment=int(value)
+          if not 0<=segment<=9: raise ValueError('sweep_day must be 0-9')
+          print(f'segment={segment}')
+          PY
+  collect:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        batch: [0,1,2,3,4,5,6,7]
+    env:
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e '.[analytics]'
+      - name: Compute offset
+        id: shard
+        env:
+          SEGMENT: ${{ needs.plan.outputs.segment }}
+          BATCH: ${{ matrix.batch }}
+        run: |
+          offset=$(( (SEGMENT * 8 + BATCH) * 100 ))
+          echo "offset=$offset" >> "$GITHUB_OUTPUT"
+          echo "asset=sec-shard-${offset}-100.sqlite.gz" >> "$GITHUB_OUTPUT"
+      - name: Require SEC contact
+        run: test -n "$SEC_USER_AGENT"
+      - name: Restore existing shard safely
+        env:
+          ASSET: ${{ steps.shard.outputs.asset }}
+        run: |
+          mkdir -p data
+          if gh release view historical-sec-data --json assets --jq '.assets[].name' | grep -Fxq "$ASSET"; then
+            gh release download historical-sec-data --pattern "$ASSET" --dir data
+            gzip -t "data/$ASSET"
+            gzip -dc "data/$ASSET" > data/fundamentals.sqlite
+          fi
+      - name: Refresh company master
+        run: python -m fundamental_database.cli companies
+      - name: Collect SEC facts
+        run: python -m fundamental_database.cli collect --offset '${{ steps.shard.outputs.offset }}' --limit 100 --continue-on-error | tee data/collection.log
+      - name: Audit
+        run: python -m fundamental_database.cli audit | tee data/audit.json
+      - name: Rank
+        run: python -m fundamental_database.cli rank
+      - name: Export Parquet
+        run: python -m fundamental_database.cli export
+      - name: Persist shard
+        env:
+          ASSET: ${{ steps.shard.outputs.asset }}
+        run: |
+          gzip -c data/fundamentals.sqlite > "data/$ASSET"
+          gh release upload historical-sec-data "data/$ASSET" --clobber
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: us-backfill-${{ steps.shard.outputs.offset }}-${{ github.run_id }}
+          path: |
+            data/audit.json
+            data/collection.log
+            data/rankings.json
+          retention-days: 30
