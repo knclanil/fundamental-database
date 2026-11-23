@@ -1,0 +1,39 @@
+name: US Fundamentals Autopilot
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */4 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: sec-collection
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e '.[analytics]'
+      - name: Validate configuration
+        run: test -n "$SEC_USER_AGENT"
+      - name: Collect, validate, export and checkpoint
+        run: python -m fundamental_database.autopilot --batch-size 100
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: us-autopilot-${{ github.run_id }}
+          path: |
+            data/us-autopilot-state.json
+            data/audit.json
+            data/rankings.json
+          if-no-files-found: ignore
+          retention-days: 14

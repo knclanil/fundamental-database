@@ -6,8 +6,6 @@ on:
         description: 'Sweep segment 0-9 (each segment processes 800 company slots)'
         required: true
         default: '0'
-  schedule:
-    - cron: '11 3 * * *'
 permissions:
   contents: write
 concurrency:
